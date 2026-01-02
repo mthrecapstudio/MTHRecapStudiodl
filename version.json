@@ -1,6 +1,6 @@
 {
-    "version": "v3.6",
-    "release_date": "2025-12-23",
-    "changelog": "- Thêm tính năng cắt banner quảng cáo tự động.\n- Nâng cấp hệ thống AI Vision nhận diện rác.\n- Sửa lỗi nút Dừng không hoạt động.",
-    "download_url": "https://github.com/mthrecapstudio/MTHRecapStudiodl/releases/download/MTH_Recap_Studio_Setup_v3.6/MTH_Recap_Studio_Setup_v3.6.exe"
+    "version": "v3.7",
+    "release_date": "2025-1-2",
+    "changelog": "- Nâng cấp AI nhận diện panel.\n -Sửa các lỗi lặt vặt.",
+    "download_url": "https://github.com/mthrecapstudio/MTHRecapStudiodl/releases/download/MTH_Recap_Studio_Setup_v3.7/MTH_Recap_Studio_Setup_v3.7.exe"
 }
