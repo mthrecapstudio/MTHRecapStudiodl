@@ -43,7 +43,7 @@ Sử dụng sức mạnh của **Google Gemini AI**, MTH Studio giải quyết c
 
 ### Hướng dẫn nhanh (Quick Start)
 
-1.  **Tải xuống:** Tải bộ cài đặt mới nhất tại [Website chính thức](https://shopfov.eu.cc/).
+1.  **Tải xuống:** Tải bộ cài đặt mới nhất tại [Website chính thức](https://mthrecapstudio.site/).
 2.  **Cài đặt:** Chạy file `.exe` và làm theo hướng dẫn.
 3.  **Cấu hình API:**
     * Mở App -> Vào mục **Cài đặt (Settings)**.
@@ -67,7 +67,7 @@ Hiện tại dự án đang được phát triển dưới dạng Closed-Source 
 ## 📄 Bản quyền (License)
 
 Copyright © 2025 **MTH Studio**. All rights reserved.
-Phần mềm được phân phối độc quyền tại [shopfov.eu.cc](https://shopfov.eu.cc/).
+Phần mềm được phân phối độc quyền tại [mthrecapstudio.site](https://mthrecapstudio.site/).
 
 ---
 <div align="center">
