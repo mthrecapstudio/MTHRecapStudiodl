@@ -1,5 +1,5 @@
 {
-    "version": "v4.5",
+    "version": "v4.3",
     "release_date": "2026-2-24",
     "changelog": "- Thêm chức năng duyệt nhân vật trước khi tạo kịch bản\n -Thêm chức năng duyệt kịch bản trước khi render\n -Nút tải bản này đã ngừng hoạt động nhờ mọi người lên web tải nhé.",
     "download_url": "https://mthrecapstudio.site/download"
