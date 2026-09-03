@@ -52,7 +52,7 @@ class Settings:
     github_poll_seconds: int
     github_state_path: Path
     github_announce_on_start: bool
-    bot_api_url: str = "https://mthrecapstudio.fun/bot_api.php"
+    bot_api_url: str = "https://mthrecapstudio.fun/bot_api"
     bot_api_secret: str = "mth_discord_bot_secret_2026_9x8a"
     welcome_channel_id: int | None = None
 
@@ -100,7 +100,7 @@ def load_settings() -> Settings:
         github_poll_seconds=max(60, int(os.getenv("GITHUB_POLL_SECONDS", "300"))),
         github_state_path=github_state_path,
         github_announce_on_start=os.getenv("GITHUB_ANNOUNCE_ON_START", "").strip().lower() in {"1", "true", "yes"},
-        bot_api_url=os.getenv("BOT_API_URL", "https://mthrecapstudio.fun/bot_api.php").strip(),
+        bot_api_url=os.getenv("BOT_API_URL", "https://mthrecapstudio.fun/bot_api").strip(),
         bot_api_secret=os.getenv("BOT_API_SECRET", "mth_discord_bot_secret_2026_9x8a").strip(),
         welcome_channel_id=parse_optional_int(os.getenv("WELCOME_CHANNEL_ID")),
     )
@@ -366,6 +366,15 @@ class SupportBot(discord.Client):
         await self.change_presence(activity=activity)
         print(f"🤖 Bot đang hoạt động: {self.user} (ID: {self.user.id if self.user else 'unknown'})")
         print("💡 Đang sẵn sàng nhận câu hỏi và hỗ trợ người dùng 24/7...")
+
+        # Đồng bộ lệnh Slash ngay lập tức cho các Server (Instant Guild Sync - Hiện lệnh trong 1 giây)
+        try:
+            for guild in self.guilds:
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+                print(f"⚡ [INSTANT SYNC] Đã đồng bộ lệnh Slash tức thì cho Server: {guild.name} ({guild.id})")
+        except Exception as e:
+            print(f"⚠️ Không thể đồng bộ lệnh guild tức thì: {e}")
 
     
     async def on_member_join(self, member: discord.Member) -> None:
