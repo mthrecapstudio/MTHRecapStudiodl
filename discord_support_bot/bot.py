@@ -456,6 +456,98 @@ class SupportBot(discord.Client):
                 await self.analyze_thread(message.channel, message)
             return
 
+        # ---- HỖ TRỢ LỆNH DẤU CHẤM THAN (PREFIX COMMANDS) CHỐNG LỖI TÍCH HỢP DISCORD ----
+        raw_text = message.content.strip()
+        lower_text = raw_text.lower()
+        
+        if lower_text.startswith(("!nhanqua", "!claim", "!taikhoan", "!tk", "!hook", "!tieude")):
+            parts = raw_text.split(maxsplit=1)
+            cmd = parts[0].lower()
+            arg = parts[1].strip() if len(parts) > 1 else ""
+
+            if cmd in {"!nhanqua", "!claim"}:
+                if not arg:
+                    await message.reply("⚠️ Vui lòng nhập tên tài khoản. Ví dụ: `!nhanqua HatDauNhoBe` hoặc `!claim HatDauNhoBe`", allowed_mentions=discord.AllowedMentions.none())
+                    return
+                async with message.channel.typing():
+                    res = await call_web_api(self.settings, "claim_welcome", {
+                        "discord_id": str(message.author.id),
+                        "discord_name": message.author.name,
+                        "username": arg,
+                        "amount": 20000
+                    })
+                    if res.get("status") == "success":
+                        embed = discord.Embed(
+                            title="🎉 NHẬN QUÀ TÂN THỦ THÀNH CÔNG!",
+                            description=f"Chúc mừng {message.author.mention} đã nhận thành công quà tặng gia nhập cộng đồng Discord!",
+                            color=0x7C5CFF
+                        )
+                        embed.add_field(name="👤 Tài khoản MTH", value=f"`{res.get('username')}`", inline=True)
+                        embed.add_field(name="🎁 Phần thưởng", value="`+20.000 Credits`", inline=True)
+                        embed.add_field(name="💰 Số dư mới", value=f"**{res.get('new_balance', 0):,}** Credits", inline=True)
+                        embed.set_footer(text="MTH AI Studio • Mở app để kiểm tra và bắt đầu tạo video recap ngay!")
+                        await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                    else:
+                        embed = discord.Embed(
+                            title="❌ KHÔNG THỂ NHẬN QUÀ",
+                            description=res.get("message", "Đã có lỗi xảy ra."),
+                            color=0xFF4D4D
+                        )
+                        await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                return
+
+            elif cmd in {"!taikhoan", "!tk"}:
+                if not arg:
+                    await message.reply("⚠️ Vui lòng nhập tên tài khoản. Ví dụ: `!taikhoan HatDauNhoBe`", allowed_mentions=discord.AllowedMentions.none())
+                    return
+                async with message.channel.typing():
+                    res = await call_web_api(self.settings, "check_user", {"username": arg})
+                    if res.get("status") == "success":
+                        embed = discord.Embed(
+                            title=f"📊 THÔNG TIN TÀI KHOẢN: {res.get('username')}",
+                            color=0x06B6D4
+                        )
+                        embed.add_field(name="💰 Số dư Credits", value=f"**{res.get('credits', 0):,}**", inline=True)
+                        embed.add_field(name="👑 Gói dịch vụ", value=f"**{res.get('plan', 'FREE')}**", inline=True)
+                        embed.add_field(name="⏳ Hạn sử dụng", value=f"{res.get('expires_at')}", inline=False)
+                        embed.set_footer(text="MTH AI Studio • Nạp thêm credit tại mthrecapstudio.fun")
+                        await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                    else:
+                        await message.reply(f"❌ {res.get('message', 'Không tìm thấy tài khoản.')}", allowed_mentions=discord.AllowedMentions.none())
+                return
+
+            elif cmd == "!tieude":
+                if not arg:
+                    await message.reply("⚠️ Vui lòng nhập tên truyện. Ví dụ: `!tieude Solo Leveling`", allowed_mentions=discord.AllowedMentions.none())
+                    return
+                async with message.channel.typing():
+                    prompt = f"Hãy gợi ý 5 tiêu đề video YouTube và TikTok giật gân, cuốn hút, kích thích tò mò chuẩn SEO dành cho kênh recap bộ truyện: '{arg}'. Trình bày ngắn gọn, kèm emoji sinh động."
+                    reply = await self.generate_general_ai_reply(prompt, message.author.display_name)
+                    embed = discord.Embed(
+                        title=f"🎬 GỢI Ý TIÊU ĐỀ RECAP: {arg}",
+                        description=reply,
+                        color=0xEC4899
+                    )
+                    embed.set_footer(text="MTH AI Studio Creative Advisor • Dùng cho YouTube Shorts / TikTok / Long video")
+                    await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                return
+
+            elif cmd == "!hook":
+                if not arg:
+                    await message.reply("⚠️ Vui lòng nhập nội dung hoặc tên truyện. Ví dụ: `!hook Trọng sinh thành ma vương`", allowed_mentions=discord.AllowedMentions.none())
+                    return
+                async with message.channel.typing():
+                    prompt = f"Hãy viết 3 mẫu câu Hook mở đầu video (5 giây đầu tiên) cực kỳ kích tính, gây sốc, giữ chân người xem không lướt qua dành cho recap truyện: '{arg}'. Giọng điệu hào hùng hoặc bí ẩn."
+                    reply = await self.generate_general_ai_reply(prompt, message.author.display_name)
+                    embed = discord.Embed(
+                        title=f"⚡ CÂU HOOK MỞ ĐẦU VIDEO: {arg}",
+                        description=reply,
+                        color=0x8B5CF6
+                    )
+                    embed.set_footer(text="MTH AI Studio • Đọc câu hook này trong 3-5 giây đầu của video recap!")
+                    await message.reply(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                return
+
         # Tự động tiếp chuyện trong các kênh chat AI riêng mà không cần @mention
         ai_channels = {"tro-chuyen-cung-ai", "hoi-dap-ai", "ai-chat", "chat-bot", "tam-su-ai"}
         is_in_ai_channel = ch_name.lower() in ai_channels
