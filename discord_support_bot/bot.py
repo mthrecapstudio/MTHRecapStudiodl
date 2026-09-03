@@ -52,6 +52,9 @@ class Settings:
     github_poll_seconds: int
     github_state_path: Path
     github_announce_on_start: bool
+    bot_api_url: str = "https://mthrecapstudio.fun/bot_api.php"
+    bot_api_secret: str = "mth_discord_bot_secret_2026_9x8a"
+    welcome_channel_id: int | None = None
 
 
 def parse_optional_int(value: str | None) -> int | None:
@@ -97,6 +100,9 @@ def load_settings() -> Settings:
         github_poll_seconds=max(60, int(os.getenv("GITHUB_POLL_SECONDS", "300"))),
         github_state_path=github_state_path,
         github_announce_on_start=os.getenv("GITHUB_ANNOUNCE_ON_START", "").strip().lower() in {"1", "true", "yes"},
+        bot_api_url=os.getenv("BOT_API_URL", "https://mthrecapstudio.fun/bot_api.php").strip(),
+        bot_api_secret=os.getenv("BOT_API_SECRET", "mth_discord_bot_secret_2026_9x8a").strip(),
+        welcome_channel_id=parse_optional_int(os.getenv("WELCOME_CHANNEL_ID")),
     )
 
 
@@ -151,6 +157,26 @@ def bullet_list(items: list[str]) -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+
+async def call_web_api(settings: Settings, action: str, data: dict[str, Any]) -> dict[str, Any]:
+    url = settings.bot_api_url
+    headers = {
+        "X-Bot-Secret": settings.bot_api_secret,
+        "User-Agent": "MTH-Discord-Bot/6.2.0"
+    }
+    payload = {"action": action, **data}
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 403:
+                    return {"status": "error", "message": "Sai khóa bảo mật kết nối với web hosting."}
+                if resp.status != 200:
+                    return {"status": "error", "message": f"Máy chủ web phản hồi mã lỗi {resp.status}."}
+                return await resp.json()
+    except Exception as e:
+        return {"status": "error", "message": f"Không thể kết nối đến máy chủ web: {e}"}
+
 class SupportBot(discord.Client):
     def __init__(self, settings: Settings) -> None:
         intents = discord.Intents.default()
@@ -190,6 +216,147 @@ class SupportBot(discord.Client):
                 ephemeral=True,
             )
 
+        
+        # ---- COMMAND: NHẬN QUÀ TÂN THỦ TỰ ĐỘNG CỘNG CREDITS VÀO APP ----
+        @self.tree.command(name="nhanqua", description="🎁 Nhận ngay 20.000 Credits quà tân thủ Discord vào tài khoản MTH AI Studio!")
+        @app_commands.describe(ten_tai_khoan="Tên đăng nhập tài khoản của bạn trên app MTH AI Studio")
+        async def nhanqua_command(interaction: discord.Interaction, ten_tai_khoan: str) -> None:
+            await interaction.response.defer(ephemeral=False)
+            clean_username = ten_tai_khoan.strip()
+            
+            res = await call_web_api(self.settings, "claim_welcome", {
+                "discord_id": str(interaction.user.id),
+                "discord_name": interaction.user.name,
+                "username": clean_username,
+                "amount": 20000
+            })
+            
+            if res.get("status") == "success":
+                embed = discord.Embed(
+                    title="🎉 NHẬN QUÀ TÂN THỦ THÀNH CÔNG!",
+                    description=f"Chúc mừng {interaction.user.mention} đã nhận thành công quà tặng gia nhập cộng đồng Discord!",
+                    color=0x7C5CFF
+                )
+                embed.add_field(name="👤 Tài khoản MTH", value=f"`{res.get('username')}`", inline=True)
+                embed.add_field(name="🎁 Phần thưởng", value="`+20.000 Credits`", inline=True)
+                embed.add_field(name="💰 Số dư mới", value=f"**{res.get('new_balance', 0):,}** Credits", inline=True)
+                embed.set_footer(text="MTH AI Studio • Mở app để kiểm tra và bắt đầu tạo video recap ngay!")
+                await interaction.followup.send(embed=embed)
+            else:
+                embed = discord.Embed(
+                    title="❌ KHÔNG THỂ NHẬN QUÀ",
+                    description=res.get("message", "Đã có lỗi xảy ra."),
+                    color=0xFF4D4D
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+
+        # Alias: /claim
+        @self.tree.command(name="claim", description="🎁 Claim 20,000 Free Credits for your MTH AI Studio account!")
+        @app_commands.describe(username="Your MTH AI Studio app username")
+        async def claim_command(interaction: discord.Interaction, username: str) -> None:
+            await nhanqua_command(interaction, username)
+
+        # ---- COMMAND: KIỂM TRA TÀI KHOẢN ----
+        @self.tree.command(name="taikhoan", description="📊 Kiểm tra số dư Credits và thời hạn gói trên app MTH AI Studio")
+        @app_commands.describe(ten_tai_khoan="Tên đăng nhập tài khoản MTH của bạn")
+        async def taikhoan_command(interaction: discord.Interaction, ten_tai_khoan: str) -> None:
+            await interaction.response.defer(ephemeral=True)
+            res = await call_web_api(self.settings, "check_user", {"username": ten_tai_khoan.strip()})
+            
+            if res.get("status") == "success":
+                embed = discord.Embed(
+                    title=f"📊 THÔNG TIN TÀI KHOẢN: {res.get('username')}",
+                    color=0x06B6D4
+                )
+                embed.add_field(name="💰 Số dư Credits", value=f"**{res.get('credits', 0):,}**", inline=True)
+                embed.add_field(name="👑 Gói dịch vụ", value=f"**{res.get('plan', 'FREE')}**", inline=True)
+                embed.add_field(name="⏳ Hạn sử dụng", value=f"{res.get('expires_at')}", inline=False)
+                embed.set_footer(text="MTH AI Studio • Nạp thêm credit tại mthrecapstudio.fun")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ {res.get('message', 'Không tìm thấy tài khoản.')}", ephemeral=True)
+
+        # ---- COMMAND: ADMIN TRAO THƯỞNG / TẶNG CREDIT (CHỈ DÀNH CHO ADMIN) ----
+        @self.tree.command(name="tangqua", description="👑 [ADMIN] Tặng Credits hoặc cộng ngày dùng cho thành viên trúng giải")
+        @app_commands.describe(
+            ten_tai_khoan="Tên tài khoản MTH được nhận quà",
+            so_credits="Số Credits cần cộng thêm (ví dụ: 50000)",
+            so_ngay="Số ngày sử dụng PRO cần cộng thêm (để 0 nếu không cộng ngày)",
+            ly_do="Lý do trao thưởng (ví dụ: Thắng minigame đố vui)"
+        )
+        async def tangqua_command(
+            interaction: discord.Interaction, 
+            ten_tai_khoan: str, 
+            so_credits: int = 0, 
+            so_ngay: int = 0,
+            ly_do: str = "Phần thưởng sự kiện Discord"
+        ) -> None:
+            # Kiểm tra quyền: Phải là Admin server hoặc có role Support
+            is_admin = interaction.user.guild_permissions.administrator if interaction.guild else False
+            if not is_admin and self.settings.support_role_id and interaction.guild:
+                member = interaction.guild.get_member(interaction.user.id)
+                if member and any(r.id == self.settings.support_role_id for r in member.roles):
+                    is_admin = True
+                    
+            if not is_admin:
+                await interaction.response.send_message("❌ Bạn không có quyền thực hiện lệnh này!", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=False)
+            res = await call_web_api(self.settings, "admin_reward", {
+                "admin_id": f"{interaction.user.name} ({interaction.user.id})",
+                "username": ten_tai_khoan.strip(),
+                "credits": so_credits,
+                "days": so_ngay,
+                "reason": ly_do
+            })
+
+            if res.get("status") == "success":
+                embed = discord.Embed(
+                    title="🎁 PHẦN THƯỞNG ĐÃ ĐƯỢC TRAO!",
+                    description=f"Admin {interaction.user.mention} đã trao thưởng cho tài khoản `{ten_tai_khoan}`!\n**Lý do:** {ly_do}",
+                    color=0xF59E0B
+                )
+                if so_credits > 0:
+                    embed.add_field(name="💰 Credits cộng thêm", value=f"+{so_credits:,}", inline=True)
+                if so_ngay > 0:
+                    embed.add_field(name="⏳ Ngày dùng cộng thêm", value=f"+{so_ngay} ngày PRO", inline=True)
+                embed.add_field(name="📊 Số dư mới", value=f"**{res.get('new_balance', 0):,}** Credits", inline=True)
+                embed.set_footer(text="MTH AI Studio • Chúc mừng người chiến thắng!")
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send(f"❌ {res.get('message', 'Không thể trao thưởng.')}", ephemeral=True)
+
+        # ---- COMMAND: GỢI Ý TIÊU ĐỀ VIDEO YOUTUBE / TIKTOK RECAP ----
+        @self.tree.command(name="tieude", description="💡 AI gợi ý 5 tiêu đề video YouTube/TikTok giật gân, chuẩn SEO cho truyện")
+        @app_commands.describe(ten_truyen="Tên bộ truyện hoặc bối cảnh diễn biến chính")
+        async def tieude_command(interaction: discord.Interaction, ten_truyen: str) -> None:
+            await interaction.response.defer(ephemeral=False)
+            prompt = f"Hãy gợi ý 5 tiêu đề video YouTube và TikTok giật gân, cuốn hút, kích thích tò mò chuẩn SEO dành cho kênh recap bộ truyện: '{ten_truyen}'. Trình bày ngắn gọn, kèm emoji sinh động."
+            reply = await self.generate_general_ai_reply(prompt, interaction.user.display_name)
+            embed = discord.Embed(
+                title=f"🎬 GỢI Ý TIÊU ĐỀ RECAP: {ten_truyen}",
+                description=reply,
+                color=0xEC4899
+            )
+            embed.set_footer(text="MTH AI Studio Creative Advisor • Dùng cho YouTube Shorts / TikTok / Long video")
+            await interaction.followup.send(embed=embed)
+
+        # ---- COMMAND: GỢI Ý CÂU HOOK MỞ ĐẦU VIDEO ----
+        @self.tree.command(name="hook", description="⚡ AI viết 3 câu Hook mở đầu video siêu bánh cuốn giữ chân người xem 5 giây đầu")
+        @app_commands.describe(noi_dung="Tên truyện hoặc khoảnh khắc kịch tính muốn làm mở đầu")
+        async def hook_command(interaction: discord.Interaction, noi_dung: str) -> None:
+            await interaction.response.defer(ephemeral=False)
+            prompt = f"Hãy viết 3 mẫu câu Hook mở đầu video (5 giây đầu tiên) cực kỳ kích tính, gây sốc, giữ chân người xem không lướt qua dành cho recap truyện: '{noi_dung}'. Giọng điệu hào hùng hoặc bí ẩn."
+            reply = await self.generate_general_ai_reply(prompt, interaction.user.display_name)
+            embed = discord.Embed(
+                title=f"⚡ CÂU HOOK MỞ ĐẦU VIDEO: {noi_dung}",
+                description=reply,
+                color=0x8B5CF6
+            )
+            embed.set_footer(text="MTH AI Studio • Đọc câu hook này trong 3-5 giây đầu của video recap!")
+            await interaction.followup.send(embed=embed)
+
         await self.tree.sync()
         if self.settings.github_repo and (self.settings.discord_announce_webhook or self.settings.announcement_channel_id):
             self.github_monitor_task = self.loop.create_task(self.monitor_github_releases())
@@ -199,6 +366,41 @@ class SupportBot(discord.Client):
         await self.change_presence(activity=activity)
         print(f"🤖 Bot đang hoạt động: {self.user} (ID: {self.user.id if self.user else 'unknown'})")
         print("💡 Đang sẵn sàng nhận câu hỏi và hỗ trợ người dùng 24/7...")
+
+    
+    async def on_member_join(self, member: discord.Member) -> None:
+        """Tự động chào đón thành viên mới và hướng dẫn nhận quà tân thủ."""
+        try:
+            # Ưu tiên gửi vào kênh welcome nếu có cấu hình
+            channel = None
+            if self.settings.welcome_channel_id:
+                channel = member.guild.get_channel(self.settings.welcome_channel_id)
+            if not channel:
+                # Tìm kênh chat chung hoặc system_channel
+                channel = member.guild.system_channel
+                if not channel:
+                    for ch in member.guild.text_channels:
+                        if ch.name in {"general", "chat-chung", "thao-luan", "nhan-qua", "chao-mung"}:
+                            channel = ch
+                            break
+            if channel:
+                embed = discord.Embed(
+                    title=f"🎉 CHÀO MỪNG {member.display_name.upper()} GIA NHẬP MTH AI STUDIO!",
+                    description=(
+                        f"Chào mừng {member.mention} đã đến với cộng đồng sáng tạo video recap manga/anime! 🎬\n\n"
+                        f"🎁 **QUÀ TÂN THỦ DÀNH CHO BẠN:**\n"
+                        f"Hãy gõ ngay lệnh: **`/nhanqua ten_tai_khoan: [tên_app_của_bạn]`**\n"
+                        f"để nhận ngay **20.000 Credits miễn phí** vào tài khoản MTH AI Studio nhé!\n\n"
+                        f"💡 Cần hỗ trợ kỹ thuật hoặc mẹo làm video? Hãy thoải mái đặt câu hỏi trong kênh chat nhé!"
+                    ),
+                    color=0x7C5CFF
+                )
+                if member.display_avatar:
+                    embed.set_thumbnail(url=member.display_avatar.url)
+                embed.set_footer(text="MTH AI Studio • Chúc bạn tạo nên những video triệu view!")
+                await channel.send(content=member.mention, embed=embed)
+        except Exception as e:
+            print(f"Lỗi khi gửi lời chào thành viên mới: {e}")
 
     async def on_message(self, message: discord.Message) -> None:
         if message.author.bot:
@@ -218,8 +420,12 @@ class SupportBot(discord.Client):
                 await self.analyze_thread(message.channel, message)
             return
 
+        # Tự động tiếp chuyện trong các kênh chat AI riêng mà không cần @mention
+        ai_channels = {"tro-chuyen-cung-ai", "hoi-dap-ai", "ai-chat", "chat-bot", "tam-su-ai"}
+        is_in_ai_channel = ch_name.lower() in ai_channels
+
         # Kiểm tra xem tin nhắn có nhắc đến Bot (User mention, Role mention, hoặc gọi tên bot)
-        is_mentioned = False
+        is_mentioned = is_in_ai_channel
         if self.user:
             # 1. Tag user bot trực tiếp
             if self.user in message.mentions or any(m.id == self.user.id for m in message.mentions) or str(self.user.id) in message.content:
