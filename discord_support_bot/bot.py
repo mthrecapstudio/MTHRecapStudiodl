@@ -158,6 +158,16 @@ def bullet_list(items: list[str]) -> str:
 
 
 
+def _sync_request_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    import requests
+    resp = requests.post(url, data=payload, headers=headers, timeout=12)
+    if resp.status_code == 403:
+        return {"status": "error", "message": "Sai khóa bảo mật kết nối với web hosting."}
+    if resp.status_code != 200:
+        return {"status": "error", "message": f"Máy chủ web phản hồi mã lỗi {resp.status_code}."}
+    return resp.json()
+
+
 async def call_web_api(settings: Settings, action: str, data: dict[str, Any]) -> dict[str, Any]:
     url = settings.bot_api_url
     headers = {
@@ -166,16 +176,11 @@ async def call_web_api(settings: Settings, action: str, data: dict[str, Any]) ->
     }
     payload = {"action": action, **data}
     try:
-        import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                if resp.status == 403:
-                    return {"status": "error", "message": "Sai khóa bảo mật kết nối với web hosting."}
-                if resp.status != 200:
-                    return {"status": "error", "message": f"Máy chủ web phản hồi mã lỗi {resp.status}."}
-                return await resp.json()
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _sync_request_post, url, payload, headers)
     except Exception as e:
         return {"status": "error", "message": f"Không thể kết nối đến máy chủ web: {e}"}
+
 
 class SupportBot(discord.Client):
     def __init__(self, settings: Settings) -> None:
@@ -217,64 +222,86 @@ class SupportBot(discord.Client):
             )
 
         
-        # ---- COMMAND: NHẬN QUÀ TÂN THỦ TỰ ĐỘNG CỘNG CREDITS VÀO APP ----
+        # ---- LOGIC DÙNG CHUNG CHO NHẬN QUÀ TÂN THỦ ----
+        async def _execute_claim(interaction: discord.Interaction, user_input: str) -> None:
+            try:
+                await interaction.response.defer(ephemeral=False)
+                clean_username = user_input.strip()
+                
+                res = await call_web_api(self.settings, "claim_welcome", {
+                    "discord_id": str(interaction.user.id),
+                    "discord_name": interaction.user.name,
+                    "username": clean_username,
+                    "amount": 20000
+                })
+                
+                if res.get("status") == "success":
+                    embed = discord.Embed(
+                        title="🎉 NHẬN QUÀ TÂN THỦ THÀNH CÔNG!",
+                        description=f"Chúc mừng {interaction.user.mention} đã nhận thành công quà tặng gia nhập cộng đồng Discord!",
+                        color=0x7C5CFF
+                    )
+                    embed.add_field(name="👤 Tài khoản MTH", value=f"`{res.get('username')}`", inline=True)
+                    embed.add_field(name="🎁 Phần thưởng", value="`+20.000 Credits`", inline=True)
+                    embed.add_field(name="💰 Số dư mới", value=f"**{res.get('new_balance', 0):,}** Credits", inline=True)
+                    embed.set_footer(text="MTH AI Studio • Mở app để kiểm tra và bắt đầu tạo video recap ngay!")
+                    await interaction.followup.send(embed=embed)
+                else:
+                    embed = discord.Embed(
+                        title="❌ KHÔNG THỂ NHẬN QUÀ",
+                        description=res.get("message", "Đã có lỗi xảy ra."),
+                        color=0xFF4D4D
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+            except Exception as e:
+                print(f"Lỗi khi xử lý claim: {e}")
+                try:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(f"❌ Đã xảy ra lỗi: {e}", ephemeral=True)
+                    else:
+                        await interaction.followup.send(f"❌ Đã xảy ra lỗi: {e}", ephemeral=True)
+                except Exception:
+                    pass
+
         @self.tree.command(name="nhanqua", description="🎁 Nhận ngay 20.000 Credits quà tân thủ Discord vào tài khoản MTH AI Studio!")
         @app_commands.describe(ten_tai_khoan="Tên đăng nhập tài khoản của bạn trên app MTH AI Studio")
         async def nhanqua_command(interaction: discord.Interaction, ten_tai_khoan: str) -> None:
-            await interaction.response.defer(ephemeral=False)
-            clean_username = ten_tai_khoan.strip()
-            
-            res = await call_web_api(self.settings, "claim_welcome", {
-                "discord_id": str(interaction.user.id),
-                "discord_name": interaction.user.name,
-                "username": clean_username,
-                "amount": 20000
-            })
-            
-            if res.get("status") == "success":
-                embed = discord.Embed(
-                    title="🎉 NHẬN QUÀ TÂN THỦ THÀNH CÔNG!",
-                    description=f"Chúc mừng {interaction.user.mention} đã nhận thành công quà tặng gia nhập cộng đồng Discord!",
-                    color=0x7C5CFF
-                )
-                embed.add_field(name="👤 Tài khoản MTH", value=f"`{res.get('username')}`", inline=True)
-                embed.add_field(name="🎁 Phần thưởng", value="`+20.000 Credits`", inline=True)
-                embed.add_field(name="💰 Số dư mới", value=f"**{res.get('new_balance', 0):,}** Credits", inline=True)
-                embed.set_footer(text="MTH AI Studio • Mở app để kiểm tra và bắt đầu tạo video recap ngay!")
-                await interaction.followup.send(embed=embed)
-            else:
-                embed = discord.Embed(
-                    title="❌ KHÔNG THỂ NHẬN QUÀ",
-                    description=res.get("message", "Đã có lỗi xảy ra."),
-                    color=0xFF4D4D
-                )
-                await interaction.followup.send(embed=embed, ephemeral=True)
+            await _execute_claim(interaction, ten_tai_khoan)
 
-        # Alias: /claim
         @self.tree.command(name="claim", description="🎁 Claim 20,000 Free Credits for your MTH AI Studio account!")
         @app_commands.describe(username="Your MTH AI Studio app username")
         async def claim_command(interaction: discord.Interaction, username: str) -> None:
-            await nhanqua_command(interaction, username)
+            await _execute_claim(interaction, username)
 
         # ---- COMMAND: KIỂM TRA TÀI KHOẢN ----
         @self.tree.command(name="taikhoan", description="📊 Kiểm tra số dư Credits và thời hạn gói trên app MTH AI Studio")
         @app_commands.describe(ten_tai_khoan="Tên đăng nhập tài khoản MTH của bạn")
         async def taikhoan_command(interaction: discord.Interaction, ten_tai_khoan: str) -> None:
-            await interaction.response.defer(ephemeral=True)
-            res = await call_web_api(self.settings, "check_user", {"username": ten_tai_khoan.strip()})
-            
-            if res.get("status") == "success":
-                embed = discord.Embed(
-                    title=f"📊 THÔNG TIN TÀI KHOẢN: {res.get('username')}",
-                    color=0x06B6D4
-                )
-                embed.add_field(name="💰 Số dư Credits", value=f"**{res.get('credits', 0):,}**", inline=True)
-                embed.add_field(name="👑 Gói dịch vụ", value=f"**{res.get('plan', 'FREE')}**", inline=True)
-                embed.add_field(name="⏳ Hạn sử dụng", value=f"{res.get('expires_at')}", inline=False)
-                embed.set_footer(text="MTH AI Studio • Nạp thêm credit tại mthrecapstudio.fun")
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ {res.get('message', 'Không tìm thấy tài khoản.')}", ephemeral=True)
+            try:
+                await interaction.response.defer(ephemeral=True)
+                res = await call_web_api(self.settings, "check_user", {"username": ten_tai_khoan.strip()})
+                
+                if res.get("status") == "success":
+                    embed = discord.Embed(
+                        title=f"📊 THÔNG TIN TÀI KHOẢN: {res.get('username')}",
+                        color=0x06B6D4
+                    )
+                    embed.add_field(name="💰 Số dư Credits", value=f"**{res.get('credits', 0):,}**", inline=True)
+                    embed.add_field(name="👑 Gói dịch vụ", value=f"**{res.get('plan', 'FREE')}**", inline=True)
+                    embed.add_field(name="⏳ Hạn sử dụng", value=f"{res.get('expires_at')}", inline=False)
+                    embed.set_footer(text="MTH AI Studio • Nạp thêm credit tại mthrecapstudio.fun")
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                else:
+                    await interaction.followup.send(f"❌ {res.get('message', 'Không tìm thấy tài khoản.')}", ephemeral=True)
+            except Exception as e:
+                print(f"Lỗi lệnh /taikhoan: {e}")
+                try:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(f"❌ Lỗi: {e}", ephemeral=True)
+                    else:
+                        await interaction.followup.send(f"❌ Lỗi: {e}", ephemeral=True)
+                except Exception:
+                    pass
 
         # ---- COMMAND: ADMIN TRAO THƯỞNG / TẶNG CREDIT (CHỈ DÀNH CHO ADMIN) ----
         @self.tree.command(name="tangqua", description="👑 [ADMIN] Tặng Credits hoặc cộng ngày dùng cho thành viên trúng giải")
